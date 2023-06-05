@@ -15,7 +15,9 @@ import pyinterp
 import pyinterp.backends.xarray
 from scipy.interpolate import RegularGridInterpolator
 from tqdm import trange, tqdm
-import sys, os
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
+from torchmetrics import MeanSquaredError, MeanAbsoluteError
+import wandb
 
 
 YEAR = 2016
@@ -324,7 +326,7 @@ class FitNetModule(pl.LightningModule):
         elif self.args.dataloader_mode == "weatherbench":
             data = WeatherBenchDataset_sampling(self.args.file_name, self.args.data_path, 2677*9, 361*120, variable=self.args.variable).getslice(it, ip)
         dataset = TensorDataset(*data)
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=self.args.num_workers)
         return dataloader
         
     def configure_optimizers(self):
@@ -367,11 +369,11 @@ class FitNetModule(pl.LightningModule):
             loss = loss_logsumexp
 
         self.log("train_loss", loss, sync_dist=True)
-        self.log("train_linf", loss_linf, sync_dist=True)
-        self.log("train_mae", loss_mae, sync_dist=True)
-        self.log("train_mse", loss_mse, sync_dist=True)
-        self.log("train_scaled_mse", loss_scaled_mse, sync_dist=True)
-        self.log("train_logsumexp", loss_logsumexp, sync_dist=True)
+        self.log("train_loss_linf", loss_linf, sync_dist=True)
+        self.log("train_loss_mae", loss_mae, sync_dist=True)
+        self.log("train_loss_mse", loss_mse, sync_dist=True)
+        self.log("train_loss_scaled_mse", loss_scaled_mse, sync_dist=True)
+        self.log("train_loss_logsumexp", loss_logsumexp, sync_dist=True)
 
         return loss
 
@@ -403,11 +405,11 @@ class FitNetModule(pl.LightningModule):
             plt.title(f'p={torch.mean(coord[..., 1]).item()}')
             plt.colorbar(fraction=0.02, pad=0.04)
             if self.trainer.is_global_zero:
-                self.log("val_linf", loss_linf, rank_zero_only=True, sync_dist=True)
-                self.log("val_mae", loss_mae, rank_zero_only=True, sync_dist=True)
-                self.log("val_mse", loss_mse, rank_zero_only=True, sync_dist=True)
-                self.log("val_scaled_mse", loss_scaled_mse, rank_zero_only=True, sync_dist=True)
-                self.log("train_logsumexp", loss_logsumexp, rank_zero_only=True, sync_dist=True)
+                self.log("val_loss_linf", loss_linf, rank_zero_only=True, sync_dist=True)
+                self.log("val_loss_mae", loss_mae, rank_zero_only=True, sync_dist=True)
+                self.log("val_loss_mse", loss_mse, rank_zero_only=True, sync_dist=True)
+                self.log("val_loss_scaled_mse", loss_scaled_mse, rank_zero_only=True, sync_dist=True)
+                self.log("val_loss_logsumexp", loss_logsumexp, rank_zero_only=True, sync_dist=True)
 
 def calculate_losses(delta, p):
         delta_abs = torch.abs(delta)
@@ -418,7 +420,7 @@ def calculate_losses(delta, p):
         loss_logsumexp = torch.logsumexp(input=torch.abs(delta), dim=(0,1,2))
         return loss_linf, loss_mae, loss_mse, loss_scaled_mse, loss_logsumexp
 
-def test_on_wholedataset(file_name, data_path, output_path, output_file, model, device="cuda", variable="z"):
+def test_on_wholedataset(file_name, data_path, output_path, output_file, logger, model, device="cuda", variable="z"):
     ds = xr.open_dataset(f"{data_path}/{file_name}")
     ds_pred = xr.zeros_like(ds[variable]) - 9999
     ds = ds.assign_coords(time=ds.time.dt.dayofyear-1)
@@ -429,6 +431,11 @@ def test_on_wholedataset(file_name, data_path, output_path, output_file, model, 
     ts = ds.time.to_numpy().astype(float)
     model = model.to(device)
     max_error = np.zeros(ps.shape[0])
+    max_error_dict = dict()
+    rmse_dict = dict()
+    rmse = MeanSquaredError(squared=False)
+    mae_dict = dict()
+    mae = MeanAbsoluteError()
     for i in trange(ts.shape[0]):
         for j in range(ps.shape[0]):
             ti = float(ts[i])
@@ -439,10 +446,17 @@ def test_on_wholedataset(file_name, data_path, output_path, output_file, model, 
             with torch.no_grad():
                 var_pred = model(coord)
                 ds_pred.data[i, j, :, :] = var_pred.cpu().numpy().squeeze(-1)
-                max_error[j] = max(max_error[j], np.abs(ds_pred.data[i, j, :, :] - ds[variable][i, j, :, :]).max())
-
+                pred = ds_pred.data[i, j, :, :]
+                target = ds[variable][i, j, :, :]
+                max_error[j] = max(max_error[j], np.abs(pred - target).max())
+                max_error_dict[f'test_max_error_p{int(pj)}'] = max(max_error[j], np.abs(pred - target).max())
+                rmse_dict[f'test_rmse_p{int(pj)}'] = rmse(torch.tensor(pred), torch.tensor(target.values))
+                mae_dict[f'test_mae_p{int(pj)}'] = mae(torch.tensor(pred), torch.tensor(target.values))
     print_test_error(max_error, ps)
     print(f"Saving model to {output_path}/{output_file}")
+    logger.log_metrics(max_error_dict)
+    logger.log_metrics(rmse_dict)
+    logger.log_metrics(mae_dict)
     ds_pred.to_netcdf(f"{output_path}/{output_file}")
 
 def print_test_error(errors, pressure_levels):
@@ -482,6 +496,12 @@ def generate_outputs(model, output_path, output_file, device="cuda"):
 
 def main(args):
     model = FitNetModule(args)
+
+    if args.use_wandb:
+        logger = WandbLogger(project=args.project_name, name=args.run_name, save_dir=args.log_dir)
+    else:
+        logger = CSVLogger(name=args.run_name, save_dir=args.log_dir)
+
     if args.ckpt_path != "":
         model_loaded = FitNetModule.load_from_checkpoint(args.ckpt_path)
         model.model.load_state_dict(model_loaded.model.state_dict())
@@ -489,7 +509,19 @@ def main(args):
     trainer = None
     if not args.notraining:
         strategy = pl.strategies.DataParallelStrategy()
-        trainer = pl.Trainer(accumulate_grad_batches=args.accumulate_grad_batches, check_val_every_n_epoch=10, accelerator="gpu", auto_select_gpus=True, devices=args.num_gpu, strategy=strategy, min_epochs=10, max_epochs=args.nepoches, gradient_clip_val=0.5, sync_batchnorm=True)
+        trainer = pl.Trainer(accumulate_grad_batches=args.accumulate_grad_batches, 
+                             check_val_every_n_epoch=1,
+                             accelerator="gpu", 
+                             auto_select_gpus=True, 
+                             devices=args.num_gpu, 
+                             strategy=strategy,
+                             logger=logger,
+                             min_epochs=10, 
+                             max_epochs=args.nepoches, 
+                             gradient_clip_val=0.5, 
+                             sync_batchnorm=True,
+                             precision=args.model_precision
+                            )
         trainer.fit(model)
 
     model.eval()
@@ -503,7 +535,7 @@ def main(args):
         print(f"Quantized (FP16) size (MB): {quantized_size}")
 
     if args.testing and ((not trainer) or trainer.is_global_zero):
-        test_on_wholedataset(model.args.file_name, model.args.data_path, model.args.output_path, model.args.output_file, model, variable=model.args.variable)
+        test_on_wholedataset(model.args.file_name, model.args.data_path, model.args.output_path, model.args.output_file, logger, model, variable=model.args.variable)
 
     if args.generate_full_outputs and ((not trainer) or trainer.is_global_zero):
         generate_outputs(model, args.output_path, args.output_file)
@@ -513,12 +545,15 @@ def main(args):
     
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--project_name", default="padl23t2_experiments", type=str)
+    parser.add_argument("--run_name", type=str)
     parser.add_argument("--num_gpu", default=-1, type=int)
     parser.add_argument("--nepoches", default=20, type=int)
     parser.add_argument("--batch_size", default=3, type=int)
     parser.add_argument("--num_workers", default=20, type=int)
     parser.add_argument("--learning_rate", default=3e-4, type=float)
     parser.add_argument("--accumulate_grad_batches", default=1, type=int)
+    parser.add_argument("--model_precision", default=32, type=int)
     parser.add_argument("--sigma", default=1.6, type=float)
     parser.add_argument("--nfeature", default=128, type=int)
     parser.add_argument("--ntfeature", default=16, type=int)
@@ -548,6 +583,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_file", default="output.nc", type=str)
     parser.add_argument('--notraining', action='store_true')
     parser.add_argument('--quantizing', action='store_true')
+    parser.add_argument('--use_wandb', action='store_true')
+    parser.add_argument('--log_dir', default="../logs", type=str)
     args = parser.parse_args()
     if args.all:
         args.use_batchnorm = True
