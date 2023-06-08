@@ -18,6 +18,7 @@ from tqdm import trange, tqdm
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from torchmetrics import MeanSquaredError, MeanAbsoluteError
 import wandb
+import utils.metrics
 import yaml
 
 
@@ -431,14 +432,11 @@ def test_on_wholedataset(file_name, data_path, output_path, output_file, logger,
     ps = ds.level.to_numpy().astype(float)
     ts = ds.time.to_numpy().astype(float)
     model = model.to(device)
-    max_error = np.zeros(ps.shape[0])
-    max_error_dict = dict()
-    rmse_dict = dict()
-    rmse = MeanSquaredError(squared=False)
-    mae_dict = dict()
-    mae = MeanAbsoluteError()
-    for i in trange(ts.shape[0]):
-        for j in range(ps.shape[0]):
+    metrics = list()
+    for j in trange(ps.shape[0]):
+        preds = list()
+        targets = list()
+        for i in range(ts.shape[0]):
             ti = float(ts[i])
             pj = float(ps[j])
             t = torch.tensor([ti], dtype=dtype, device=device)
@@ -449,21 +447,19 @@ def test_on_wholedataset(file_name, data_path, output_path, output_file, logger,
                 ds_pred.data[i, j, :, :] = var_pred.cpu().numpy().squeeze(-1)
                 pred = ds_pred.data[i, j, :, :]
                 target = ds[variable][i, j, :, :]
-                max_error[j] = max(max_error[j], np.abs(pred - target).max())
-                max_error_dict[f'test_max_error_p{int(pj)}'] = max(max_error[j], np.abs(pred - target).max())
-                rmse_dict[f'test_rmse_p{int(pj)}'] = rmse(torch.tensor(pred), torch.tensor(target.values))
-                mae_dict[f'test_mae_p{int(pj)}'] = mae(torch.tensor(pred), torch.tensor(target.values))
-    print_test_error(max_error, ps)
-    print(f"Saving model to {output_path}/{output_file}")
-    logger.log_metrics(max_error_dict)
-    logger.log_metrics(rmse_dict)
-    logger.log_metrics(mae_dict)
+                preds.append(pred)
+                targets.append(target)
+        pred_data = np.array(preds)
+        target_data = xr.concat(targets, 'time')
+        p_metrics = utils.metrics.compute_evaluation_metrics(pred_data, target_data)
+        logger.log_metrics({f"{key}_p{int(pj)}": val for key, val in p_metrics.items()})
+        metrics.append(p_metrics)
+
+    logger.log_metrics(utils.metrics.compute_mean_metrics(metrics))
+
+    print(f"Saving dataset to {output_path}/{output_file}")
     ds_pred.to_netcdf(f"{output_path}/{output_file}")
 
-def print_test_error(errors, pressure_levels):
-    print("Testing result (the max absolute error for each pressure level over all available time points):")
-    for i in range(pressure_levels.shape[0]):
-        print(f"Max error for p={pressure_levels[i]}: {errors[i]}")
 
 def generate_outputs(model, output_path, output_file, device="cuda"):
     file_name = model.args.file_name
