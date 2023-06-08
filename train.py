@@ -18,6 +18,7 @@ from tqdm import trange, tqdm
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from torchmetrics import MeanSquaredError, MeanAbsoluteError
 import wandb
+import yaml
 
 
 YEAR = 2016
@@ -496,6 +497,13 @@ def generate_outputs(model, output_path, output_file, device="cuda"):
 
 def main(args):
     model = FitNetModule(args)
+    if args.wandb_sweep:
+        args.use_wandb = True
+
+        with open('./sweep_config.yml') as file:
+            config = yaml.load(file, Loader=yaml.FullLoader)
+    
+        run = wandb.init(config=config)
 
     if args.use_wandb:
         logger = WandbLogger(project=args.project_name, name=args.run_name, save_dir=args.log_dir)
@@ -541,7 +549,6 @@ def main(args):
         generate_outputs(model, args.output_path, args.output_file)
 
     return model
-
     
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -566,6 +573,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", default=".", type=str)
     parser.add_argument("--file_name", type=str)
     parser.add_argument("--ckpt_path", default="", type=str)
+    parser.add_argument("--wandb_sweep", action='store_true')
     parser.add_argument('--use_batchnorm', action='store_true')
     parser.add_argument('--use_skipconnect', action='store_true')
     parser.add_argument('--use_invscale', action='store_true')
