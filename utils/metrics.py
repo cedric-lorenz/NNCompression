@@ -8,7 +8,7 @@ def compute_max_error(pred, target):
 
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
     
     Returns:
 
@@ -21,15 +21,14 @@ def compute_max_error(pred, target):
 
 def compute_99999_error(pred, target):
     """
-    Compute the Maximum Error between two xr.DataArrays.
+    Compute the 0.99999 Quantile Error between two xr.DataArrays.
 
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
     
     Returns:
-
-        max_error: Maximum Error.
+        quantile_error: Quantile Error.
     """
     error = np.abs(pred - target)
     quantile_error = np.quantile(error, 0.99999)
@@ -41,7 +40,7 @@ def compute_rmse(pred, target, mean_dims=None):
     
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
         mean_dims: Dimensions over which to average the squared error.
 
     Returns:
@@ -60,7 +59,7 @@ def compute_mae(pred, target, mean_dims=None):
     Compute the Mean Absolute Error (MAE) between two xr.DataArrays.
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
         mean_dims: Dimensions over which to average the absolute error.
     Returns:
         mae: Mean Absolute Error.
@@ -75,10 +74,10 @@ def compute_mae(pred, target, mean_dims=None):
 
 def compute_weighted_rmse(pred, target, mean_dims=xr.ALL_DIMS):
     """
-    Compute the RMSE with latitude weighting from two xr.DataArrays.
+    Compute the RMSE with latitude weighting between two xr.DataArrays.
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
         mean_dims: dimensions over which to average score
     Returns:
         rmse: Latitude weighted root mean squared error
@@ -92,10 +91,10 @@ def compute_weighted_rmse(pred, target, mean_dims=xr.ALL_DIMS):
 
 def compute_weighted_mae(pred, target, mean_dims=xr.ALL_DIMS):
     """
-    Compute the MAE with latitude weighting from two xr.DataArrays.
+    Compute the MAE with latitude weighting between two xr.DataArrays.
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
         mean_dims: dimensions over which to average score
     Returns:
         mae: Latitude weighted root mean absolute error
@@ -109,11 +108,11 @@ def compute_weighted_mae(pred, target, mean_dims=xr.ALL_DIMS):
 
 def compute_psnr(pred, target):
     """
-    Compute the Peak Signal-to-Noise Ratio (PSNR) between two tensors.
+    Compute the Peak Signal-to-Noise Ratio (PSNR) between two xr.DataArrays.
 
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
 
     Returns:
         psnr: Peak Signal-to-Noise Ratio.
@@ -126,11 +125,11 @@ def compute_psnr(pred, target):
 
 def compute_evaluation_metrics(pred, target, prefix='test'):
     """
-    Compute evaluation metrics between predicted and target tensors.
+    Compute evaluation metrics between predicted and target xr.DataArrays.
 
     Args:
         pred (xr.DataArray): Forecast.
-        target ((xr.DataArray): Truth.
+        target (xr.DataArray): Truth.
 
     Returns:
         metrics (dict): Dictionary containing evaluation metrics.
