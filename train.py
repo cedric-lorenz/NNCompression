@@ -591,7 +591,7 @@ if __name__ == "__main__":
     parser.add_argument("--tresolution", default=24, type=float)
     parser.add_argument('--use_xyztransform', action='store_true')
     parser.add_argument('--use_stat', action='store_true')
-    parser.add_argument('--loss_type', default="scaled_mse", type=str)
+    parser.add_argument('--loss_type', default="mse", type=str)
     parser.add_argument('--all', action='store_true')
     parser.add_argument('--testing', action='store_true')
     parser.add_argument('--generate_full_outputs', action='store_true')
