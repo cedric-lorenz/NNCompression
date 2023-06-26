@@ -20,6 +20,7 @@ from torchmetrics import MeanSquaredError, MeanAbsoluteError
 import wandb
 import utils.metrics
 import yaml
+import random
 
 
 YEAR = 2016
@@ -491,7 +492,16 @@ def generate_outputs(model, output_path, output_file, device="cuda"):
     out_ds.to_netcdf(file_name)
     print(errors.max())
 
+def set_all_seeds(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+
 def main(args):
+    set_all_seeds(args.seed)
+
     model = FitNetModule(args)
     if args.wandb_sweep:
         args.use_wandb = True
@@ -589,6 +599,7 @@ if __name__ == "__main__":
     parser.add_argument('--quantizing', action='store_true')
     parser.add_argument('--use_wandb', action='store_true')
     parser.add_argument('--log_dir', default="../logs", type=str)
+    parser.add_argument("--seed", default=1111, type=int)
     args = parser.parse_args()
     if args.all:
         args.use_batchnorm = True
