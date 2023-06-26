@@ -156,9 +156,9 @@ class ERA5Dataset_sampling(Dataset):
         return coord.unsqueeze(0), var.unsqueeze(0)
 
 class FourierFeature(nn.Module):
-    def __init__(self, sigma, infeature, outfeature):
+    def __init__(self, sigma, infeature, outfeature, trainable):
         super(FourierFeature, self).__init__()
-        self.feature_map = nn.Parameter(torch.normal(0., sigma, (outfeature, infeature)) ,requires_grad=False)
+        self.feature_map = nn.Parameter(torch.normal(0., sigma, (outfeature, infeature)), requires_grad=trainable)
     def forward(self, x, cos_only: bool = False):
         # x shape: (..., infeature)
         x = 2*math.pi*F.linear(x, self.feature_map)
@@ -261,10 +261,12 @@ class FitNet(nn.Module):
         else:
             ne = 0
         if args.use_fourierfeature:
-            self.fourierfeature_t = FourierFeature(args.sigma, 1, args.ntfeature)
-            self.fourierfeature_p = FourierFeature(args.sigma, 1, args.nfeature)
-            self.fourierfeature_s = FourierFeature(args.sigma, ns, args.nfeature)
+            self.fourierfeature_t = FourierFeature(args.sigma, 1, args.ntfeature, args.trainable_fourierfeature)
+            self.fourierfeature_p = FourierFeature(args.sigma, 1, args.nfeature, args.trainable_fourierfeature)
+            self.fourierfeature_s = FourierFeature(args.sigma, ns, args.nfeature, args.trainable_fourierfeature)
             nf = 2*(2*args.nfeature + args.ntfeature)
+            if args.concat_input:
+                nf += 5
         else:
             nf = 2 + ns
         self.normalize = NormalizeInput(args.tscale, args.zscale)     
@@ -277,6 +279,7 @@ class FitNet(nn.Module):
         self.use_fourierfeature = self.args.use_fourierfeature
         self.use_tembedding = self.args.use_tembedding
         self.use_invscale = self.args.use_invscale
+        self.concat_input = self.args.concat_input
 
     def forward(self, coord):
         batch_size = coord.shape[:-1]
@@ -287,7 +290,10 @@ class FitNet(nn.Module):
             t = x[..., 0:1]
             p = x[..., 1:2]
             s = x[..., 2:]
-            x = torch.cat((self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
+            if self.concat_input:
+                x = torch.cat((x, self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
+            else:
+                x = torch.cat((self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
         if self.use_tembedding:
             x = torch.cat((self.embed_t(coord[..., 0:1]), x), dim=-1)
         x = F.gelu(self.fci(x))
@@ -590,6 +596,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_skipconnect', action='store_true')
     parser.add_argument('--use_invscale', action='store_true')
     parser.add_argument('--use_fourierfeature', action='store_true')
+    parser.add_argument('--trainable_fourierfeature', default=False, type=bool)
+    parser.add_argument('--concat_input', default=False, type=bool)
     parser.add_argument('--use_tembedding', action='store_true')
     parser.add_argument("--tembed_size", default=400, type=int) # number of time steps
     parser.add_argument("--tresolution", default=24, type=float)
@@ -613,4 +621,6 @@ if __name__ == "__main__":
         args.use_skipconnect = True
         args.use_xyztransform = True
         args.use_fourierfeature = True
+    if args.trainable_fourierfeature:
+        args.concat_input = True
     main(args)
