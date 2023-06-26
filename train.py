@@ -322,8 +322,8 @@ class FitNetModule(pl.LightningModule):
     
     def val_dataloader(self):
         # TODO: use xarray unstack?
-        it = 42
-        ip = 4
+        it = 278
+        ip = 6
         if self.args.dataloader_mode == "sampling_nc":
             data = ERA5Dataset_sampling(self.args.file_name, self.args.data_path, 2677*9, 361*120, variable=self.args.variable).getslice(it, ip)
         elif self.args.dataloader_mode == "weatherbench":
@@ -407,6 +407,8 @@ class FitNetModule(pl.LightningModule):
             plt.axis('scaled')
             plt.title(f'p={torch.mean(coord[..., 1]).item()}')
             plt.colorbar(fraction=0.02, pad=0.04)
+            plt.savefig(f"plots/validation_plot_{self.global_step}.png")
+            plt.close()
             if self.trainer.is_global_zero:
                 self.log("val_loss_linf", loss_linf, rank_zero_only=True, sync_dist=True)
                 self.log("val_loss_mae", loss_mae, rank_zero_only=True, sync_dist=True)
