@@ -20,6 +20,7 @@ from torchmetrics import MeanSquaredError, MeanAbsoluteError
 import wandb
 import utils.metrics
 import yaml
+import random
 
 
 YEAR = 2016
@@ -155,9 +156,9 @@ class ERA5Dataset_sampling(Dataset):
         return coord.unsqueeze(0), var.unsqueeze(0)
 
 class FourierFeature(nn.Module):
-    def __init__(self, sigma, infeature, outfeature):
+    def __init__(self, sigma, infeature, outfeature, trainable):
         super(FourierFeature, self).__init__()
-        self.feature_map = nn.Parameter(torch.normal(0., sigma, (outfeature, infeature)) ,requires_grad=False)
+        self.feature_map = nn.Parameter(torch.normal(0., sigma, (outfeature, infeature)), requires_grad=trainable)
     def forward(self, x, cos_only: bool = False):
         # x shape: (..., infeature)
         x = 2*math.pi*F.linear(x, self.feature_map)
@@ -260,10 +261,12 @@ class FitNet(nn.Module):
         else:
             ne = 0
         if args.use_fourierfeature:
-            self.fourierfeature_t = FourierFeature(args.sigma, 1, args.ntfeature)
-            self.fourierfeature_p = FourierFeature(args.sigma, 1, args.nfeature)
-            self.fourierfeature_s = FourierFeature(args.sigma, ns, args.nfeature)
+            self.fourierfeature_t = FourierFeature(args.sigma, 1, args.ntfeature, args.trainable_fourierfeature)
+            self.fourierfeature_p = FourierFeature(args.sigma, 1, args.nfeature, args.trainable_fourierfeature)
+            self.fourierfeature_s = FourierFeature(args.sigma, ns, args.nfeature, args.trainable_fourierfeature)
             nf = 2*(2*args.nfeature + args.ntfeature)
+            if args.concat_input:
+                nf += 5
         else:
             nf = 2 + ns
         self.normalize = NormalizeInput(args.tscale, args.zscale)     
@@ -276,6 +279,7 @@ class FitNet(nn.Module):
         self.use_fourierfeature = self.args.use_fourierfeature
         self.use_tembedding = self.args.use_tembedding
         self.use_invscale = self.args.use_invscale
+        self.concat_input = self.args.concat_input
 
     def forward(self, coord):
         batch_size = coord.shape[:-1]
@@ -286,7 +290,10 @@ class FitNet(nn.Module):
             t = x[..., 0:1]
             p = x[..., 1:2]
             s = x[..., 2:]
-            x = torch.cat((self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
+            if self.concat_input:
+                x = torch.cat((x, self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
+            else:
+                x = torch.cat((self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
         if self.use_tembedding:
             x = torch.cat((self.embed_t(coord[..., 0:1]), x), dim=-1)
         x = F.gelu(self.fci(x))
@@ -321,8 +328,8 @@ class FitNetModule(pl.LightningModule):
     
     def val_dataloader(self):
         # TODO: use xarray unstack?
-        it = 42
-        ip = 4
+        it = 278
+        ip = 6
         if self.args.dataloader_mode == "sampling_nc":
             data = ERA5Dataset_sampling(self.args.file_name, self.args.data_path, 2677*9, 361*120, variable=self.args.variable).getslice(it, ip)
         elif self.args.dataloader_mode == "weatherbench":
@@ -406,6 +413,8 @@ class FitNetModule(pl.LightningModule):
             plt.axis('scaled')
             plt.title(f'p={torch.mean(coord[..., 1]).item()}')
             plt.colorbar(fraction=0.02, pad=0.04)
+            plt.savefig(f"plots/validation_plot_{self.global_step}.png")
+            plt.close()
             if self.trainer.is_global_zero:
                 self.log("val_loss_linf", loss_linf, rank_zero_only=True, sync_dist=True)
                 self.log("val_loss_mae", loss_mae, rank_zero_only=True, sync_dist=True)
@@ -491,15 +500,27 @@ def generate_outputs(model, output_path, output_file, device="cuda"):
     out_ds.to_netcdf(file_name)
     print(errors.max())
 
+def set_all_seeds(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+
 def main(args):
+    set_all_seeds(args.seed)
+
     model = FitNetModule(args)
+
+    run_name = f'w{args.width}_b{args.batch_size}_fp{args.model_precision}_nf{args.nfeature}_sf{args.sigma}_tf{args.trainable_fourierfeature}_s{args.seed}'
+    args.run_name = run_name
+    args.output_file = f'dataset1_{run_name}.nc'
+
     if args.wandb_sweep:
         args.use_wandb = True
-
-        with open('./sweep_config.yml') as file:
+        with open(f'./{args.wandb_sweep_config_name}.yml') as file:
             config = yaml.load(file, Loader=yaml.FullLoader)
-    
-        run = wandb.init(config=config)
+        run = wandb.init(config=config, name=args.run_name)
 
     if args.use_wandb:
         logger = WandbLogger(project=args.project_name, name=args.run_name, save_dir=args.log_dir)
@@ -570,16 +591,19 @@ if __name__ == "__main__":
     parser.add_argument("--file_name", type=str)
     parser.add_argument("--ckpt_path", default="", type=str)
     parser.add_argument("--wandb_sweep", action='store_true')
+    parser.add_argument("--wandb_sweep_config_name", default="sweep_config", type=str)
     parser.add_argument('--use_batchnorm', action='store_true')
     parser.add_argument('--use_skipconnect', action='store_true')
     parser.add_argument('--use_invscale', action='store_true')
     parser.add_argument('--use_fourierfeature', action='store_true')
+    parser.add_argument('--trainable_fourierfeature', default=False, type=bool)
+    parser.add_argument('--concat_input', default=False, type=bool)
     parser.add_argument('--use_tembedding', action='store_true')
     parser.add_argument("--tembed_size", default=400, type=int) # number of time steps
     parser.add_argument("--tresolution", default=24, type=float)
     parser.add_argument('--use_xyztransform', action='store_true')
     parser.add_argument('--use_stat', action='store_true')
-    parser.add_argument('--loss_type', default="scaled_mse", type=str)
+    parser.add_argument('--loss_type', default="mse", type=str)
     parser.add_argument('--all', action='store_true')
     parser.add_argument('--testing', action='store_true')
     parser.add_argument('--generate_full_outputs', action='store_true')
@@ -589,6 +613,7 @@ if __name__ == "__main__":
     parser.add_argument('--quantizing', action='store_true')
     parser.add_argument('--use_wandb', action='store_true')
     parser.add_argument('--log_dir', default="../logs", type=str)
+    parser.add_argument("--seed", default=1111, type=int)
     args = parser.parse_args()
     if args.all:
         args.use_batchnorm = True
@@ -596,4 +621,6 @@ if __name__ == "__main__":
         args.use_skipconnect = True
         args.use_xyztransform = True
         args.use_fourierfeature = True
+    if args.trainable_fourierfeature:
+        args.concat_input = True
     main(args)
