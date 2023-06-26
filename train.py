@@ -505,13 +505,16 @@ def main(args):
     set_all_seeds(args.seed)
 
     model = FitNetModule(args)
+
+    run_name = f'w{args.width}_b{args.batch_size}_fp{args.model_precision}_nf{args.nfeature}_sf{args.sigma}_tf{args.trainable_fourierfeature}_s{args.seed}'
+    args.run_name = run_name
+    args.output_file = f'dataset1_{run_name}.nc'
+
     if args.wandb_sweep:
         args.use_wandb = True
-
-        with open('./sweep_config.yml') as file:
+        with open(f'./{args.wandb_sweep_config_name}.yml') as file:
             config = yaml.load(file, Loader=yaml.FullLoader)
-    
-        run = wandb.init(config=config)
+        run = wandb.init(config=config, name=args.run_name)
 
     if args.use_wandb:
         logger = WandbLogger(project=args.project_name, name=args.run_name, save_dir=args.log_dir)
@@ -582,6 +585,7 @@ if __name__ == "__main__":
     parser.add_argument("--file_name", type=str)
     parser.add_argument("--ckpt_path", default="", type=str)
     parser.add_argument("--wandb_sweep", action='store_true')
+    parser.add_argument("--wandb_sweep_config_name", default="sweep_config", type=str)
     parser.add_argument('--use_batchnorm', action='store_true')
     parser.add_argument('--use_skipconnect', action='store_true')
     parser.add_argument('--use_invscale', action='store_true')
