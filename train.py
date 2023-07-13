@@ -29,8 +29,6 @@ from bitorch.quantizations import InputDoReFa, WeightDoReFa
 
 bitorch.mode = bitorch.RuntimeMode.RAW
 
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 YEAR = 2016
 
 class ERA5stat():
