@@ -21,7 +21,15 @@ import wandb
 import utils.metrics
 import yaml
 import random
+import bitorchinfo 
+import bitorch
+from bitorch.layers import QLinear
+from bitorch.quantizations import InputDoReFa, WeightDoReFa
 
+
+bitorch.mode = bitorch.RuntimeMode.RAW
+
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 YEAR = 2016
 
@@ -196,10 +204,16 @@ class InvScale(nn.Module):
         return (z_normalized / factor)*std + mean
 
 class ResBlock(nn.Module):
-    def __init__(self, width, use_batchnorm=True, use_skipconnect=True):
+    def __init__(self, width, use_batchnorm=True, use_skipconnect=True, use_quantized_linear_layer=False, q_bits=2):
         super(ResBlock, self).__init__()
-        self.fc1 = nn.Linear(width, width, bias=False)
-        self.fc2 = nn.Linear(width, width, bias=True)
+        
+        if use_quantized_linear_layer:
+            self.fc1 = QLinear(width, width, bias=False, weight_quantization=WeightDoReFa(bits=q_bits), input_quantization=InputDoReFa(bits=q_bits))
+            self.fc2 = QLinear(width, width, bias=True, weight_quantization=WeightDoReFa(bits=q_bits), input_quantization=InputDoReFa(bits=q_bits))
+        else:
+            self.fc1 = nn.Linear(width, width, bias=False)
+            self.fc2 = nn.Linear(width, width, bias=True)
+
         self.use_batchnorm = use_batchnorm
         self.use_skipconnect = use_skipconnect
         if use_batchnorm:
@@ -272,7 +286,7 @@ class FitNet(nn.Module):
         self.normalize = NormalizeInput(args.tscale, args.zscale)     
         self.depth = args.depth
         self.fci = nn.Linear(nf + ne, args.width)
-        self.fcs = nn.ModuleList([ResBlock(args.width, args.use_batchnorm, args.use_skipconnect) for i in range(args.depth)])
+        self.fcs = nn.ModuleList([ResBlock(args.width, args.use_batchnorm, args.use_skipconnect, args.use_quantized_linear_layer, args.q_bits) for i in range(args.depth)])
         self.fco = nn.Linear(args.width, 1)
 
         self.use_xyztransform = self.args.use_xyztransform
@@ -469,7 +483,6 @@ def test_on_wholedataset(file_name, data_path, output_path, output_file, logger,
     print(f"Saving dataset to {output_path}/{output_file}")
     ds_pred.to_netcdf(f"{output_path}/{output_file}")
 
-
 def generate_outputs(model, output_path, output_file, device="cuda"):
     file_name = model.args.file_name
     data_path = model.args.data_path
@@ -511,6 +524,8 @@ def main(args):
     set_all_seeds(args.seed)
 
     model = FitNetModule(args)
+
+    bitorchinfo.summary(model, input_size=(args.batch_size, 1, 4, 4))
 
     run_name = f'w{args.width}_b{args.batch_size}_fp{args.model_precision}_nf{args.nfeature}_sf{args.sigma}_tf{args.trainable_fourierfeature}_s{args.seed}'
     args.run_name = run_name
@@ -572,7 +587,7 @@ if __name__ == "__main__":
     parser.add_argument("--project_name", default="padl23t2_experiments", type=str)
     parser.add_argument("--run_name", type=str)
     parser.add_argument("--num_gpu", default=-1, type=int)
-    parser.add_argument("--nepoches", default=20, type=int)
+    parser.add_argument("--nepoches", default=30, type=int)
     parser.add_argument("--batch_size", default=3, type=int)
     parser.add_argument("--num_workers", default=20, type=int)
     parser.add_argument("--learning_rate", default=3e-4, type=float)
@@ -592,6 +607,8 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt_path", default="", type=str)
     parser.add_argument("--wandb_sweep", action='store_true')
     parser.add_argument("--wandb_sweep_config_name", default="sweep_config", type=str)
+    parser.add_argument('--use_quantized_linear_layer', action='store_true')
+    parser.add_argument("--q_bits", default=2, type=int)
     parser.add_argument('--use_batchnorm', action='store_true')
     parser.add_argument('--use_skipconnect', action='store_true')
     parser.add_argument('--use_invscale', action='store_true')
