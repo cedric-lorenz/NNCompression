@@ -351,8 +351,18 @@ class FitNetModule(pl.LightningModule):
         return dataloader
         
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.args.learning_rate)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.25, patience=10000)
+        optimizer = None
+        if self.args.optimizer == "adam":
+            optimizer = torch.optim.Adam(self.parameters(), lr=self.args.learning_rate)
+        elif self.args.optimizer == "radam":
+            optimizer = torch.optim.RAdam(self.parameters(), lr=self.args.learning_rate)
+
+        scheduler = None
+        if self.args.scheduler == "reducelro":
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.25, patience=10000)
+        elif self.args.scheduler == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+
         sched = {
             'scheduler': scheduler,
             'interval': 'step',
@@ -600,6 +610,8 @@ if __name__ == "__main__":
     parser.add_argument("--zscale", default=100., type=float)
     parser.add_argument("--variable", default="z", type=str)
     parser.add_argument("--dataloader_mode", default="sampling_nc", type=str)
+    parser.add_argument("--optimizer", default="adam", type=str)
+    parser.add_argument("--scheduler", default="reducelro", type=str)
     parser.add_argument("--data_path", default=".", type=str)
     parser.add_argument("--file_name", type=str)
     parser.add_argument("--ckpt_path", default="", type=str)
