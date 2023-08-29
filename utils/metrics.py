@@ -9,7 +9,7 @@ def compute_max_error(pred, target):
     Args:
         pred (xr.DataArray): Forecast.
         target (xr.DataArray): Truth.
-    
+
     Returns:
 
         max_error: Maximum Error.
@@ -26,7 +26,7 @@ def compute_99999_error(pred, target):
     Args:
         pred (xr.DataArray): Forecast.
         target (xr.DataArray): Truth.
-    
+
     Returns:
         quantile_error: Quantile Error.
     """
@@ -34,10 +34,11 @@ def compute_99999_error(pred, target):
     quantile_error = np.quantile(error, 0.99999)
     return quantile_error
 
+
 def compute_rmse(pred, target, mean_dims=None):
     """
     Compute the Root Mean Squared Error (RMSE) between two xr.DataArrays.
-    
+
     Args:
         pred (xr.DataArray): Forecast.
         target (xr.DataArray): Truth.
@@ -85,7 +86,7 @@ def compute_weighted_rmse(pred, target, mean_dims=xr.ALL_DIMS):
     error = pred - target
     weights_lat = np.cos(np.deg2rad(error.latitude))
     weights_lat /= weights_lat.mean()
-    rmse = np.sqrt(((error)**2 * weights_lat).mean(mean_dims))
+    rmse = np.sqrt(((error) ** 2 * weights_lat).mean(mean_dims))
     return rmse
 
 
@@ -123,7 +124,7 @@ def compute_psnr(pred, target):
     return psnr
 
 
-def compute_evaluation_metrics(pred, target, prefix='test'):
+def compute_evaluation_metrics(pred, target, prefix="test"):
     """
     Compute evaluation metrics between predicted and target xr.DataArrays.
 
@@ -138,31 +139,31 @@ def compute_evaluation_metrics(pred, target, prefix='test'):
 
     # Compute max_error
     max_error = compute_max_error(pred, target)
-    metrics[f'{prefix}_max_error'] = max_error.item()
+    metrics[f"{prefix}_max_error"] = max_error.item()
 
     # Compute 0.99999 error
     quantile_error = compute_99999_error(pred, target)
-    metrics[f'{prefix}_0.99999_quantile_error'] = quantile_error.item()
+    metrics[f"{prefix}_0.99999_quantile_error"] = quantile_error.item()
 
     # Compute rmse
     rmse = compute_rmse(pred, target)
-    metrics[f'{prefix}_rmse'] = rmse.item()
+    metrics[f"{prefix}_rmse"] = rmse.item()
 
     # Compute mae
     mae = compute_mae(pred, target)
-    metrics[f'{prefix}_mae'] = mae.item()
+    metrics[f"{prefix}_mae"] = mae.item()
 
     # Compute weighted rmse
     rmse = compute_weighted_rmse(pred, target)
-    metrics[f'{prefix}_weighted_rmse'] = rmse.item()
+    metrics[f"{prefix}_weighted_rmse"] = rmse.item()
 
     # Compute weighted mae
     mae = compute_weighted_mae(pred, target)
-    metrics[f'{prefix}_weighted_mae'] = mae.item()
+    metrics[f"{prefix}_weighted_mae"] = mae.item()
 
     # Compute psnr
     psnr = compute_psnr(pred, target)
-    metrics[f'{prefix}_psnr'] = psnr.item()
+    metrics[f"{prefix}_psnr"] = psnr.item()
 
     return metrics
 
