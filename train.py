@@ -227,28 +227,9 @@ class ResBlock(nn.Module):
         else:
             return x
 
-class MultiResolutionEmbedding(nn.Module):
-    def __init__(self, feature_size, nfeature, tresolution, tscale):
-        # tresolution: timestep size in hours
-        super().__init__()
-        self.tscale = tscale
-        self.tresolution = tresolution
-        self.embed1 = nn.Embedding(366, nfeature, max_norm=1.0)
-        self.embed2 = nn.Embedding(24, nfeature, max_norm=1.0)
-        self.embed3 = nn.Embedding(int(feature_size/tscale), nfeature, max_norm=1.0)
-
-    def forward(self, idx):
-        idx = idx.squeeze(-1)
-        idx1 = torch.floor(idx * self.tresolution).long()
-        idx2 = torch.floor(idx / self.tscale).long()
-        embed1 = self.embed1((idx1 // 24) % 366)
-        embed2 = self.embed2(idx1 % 24)
-        embed3 = self.embed3(idx2)
-        embed = torch.cat((embed1, embed2, embed3), dim=-1)
-        return embed
     
 class FitNet(nn.Module):
-    __constants__ = ['use_xyztransform','use_fourierfeature','use_tembedding','use_invscale', 'depth']
+    __constants__ = ['use_xyztransform','use_fourierfeature','use_invscale','depth']
 
     def __init__(self, args):
         super(FitNet, self).__init__()
@@ -260,11 +241,6 @@ class FitNet(nn.Module):
             ns = 3
         else:
             ns = 2
-        if args.use_tembedding:
-            ne = args.ntfeature * 3
-            self.embed_t = MultiResolutionEmbedding(args.tembed_size, args.ntfeature, args.tresolution, args.tscale)
-        else:
-            ne = 0
         if args.use_fourierfeature:
             self.fourierfeature_t = FourierFeature(args.sigma, 1, args.ntfeature, args.trainable_fourierfeature)
             self.fourierfeature_p = FourierFeature(args.sigma, 1, args.nfeature, args.trainable_fourierfeature)
@@ -274,15 +250,15 @@ class FitNet(nn.Module):
                 nf += 5
         else:
             nf = 2 + ns
+
         self.normalize = NormalizeInput(args.tscale, args.zscale)     
         self.depth = args.depth
-        self.fci = nn.Linear(nf + ne, args.width)
+        self.fci = nn.Linear(nf, args.width)
         self.fcs = nn.ModuleList([ResBlock(args.width, args.use_batchnorm, args.use_skipconnect, args.use_quantized_linear_layer, args.q_bits) for i in range(args.depth)])
         self.fco = nn.Linear(args.width, 1)
 
         self.use_xyztransform = self.args.use_xyztransform
         self.use_fourierfeature = self.args.use_fourierfeature
-        self.use_tembedding = self.args.use_tembedding
         self.use_invscale = self.args.use_invscale
         self.concat_input = self.args.concat_input
 
@@ -299,8 +275,7 @@ class FitNet(nn.Module):
                 x = torch.cat((x, self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
             else:
                 x = torch.cat((self.fourierfeature_t(t), self.fourierfeature_p(p), self.fourierfeature_s(s)), dim=-1)
-        if self.use_tembedding:
-            x = torch.cat((self.embed_t(coord[..., 0:1]), x), dim=-1)
+
         x = F.gelu(self.fci(x))
         x = x.flatten(end_dim=-2) # batchnorm 1d only accepts (N, C) shape
         for fc in self.fcs:        
@@ -615,8 +590,6 @@ if __name__ == "__main__":
     parser.add_argument('--use_fourierfeature', action='store_true')
     parser.add_argument('--trainable_fourierfeature', default=False, type=bool)
     parser.add_argument('--concat_input', default=False, type=bool)
-    parser.add_argument('--use_tembedding', action='store_true')
-    parser.add_argument("--tembed_size", default=400, type=int) # number of time steps
     parser.add_argument("--tresolution", default=24, type=float)
     parser.add_argument('--use_xyztransform', action='store_true')
     parser.add_argument('--use_stat', action='store_true')
