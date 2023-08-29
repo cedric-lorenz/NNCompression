@@ -8,8 +8,6 @@ import math
 import numpy as np
 import xarray as xr
 from argparse import ArgumentParser
-from types import SimpleNamespace
-from datetime import datetime
 import matplotlib.pyplot as plt
 import pyinterp
 import pyinterp.backends.xarray
@@ -65,7 +63,6 @@ class WeatherBenchDataset_sampling(Dataset):
         file_path = f"{data_path}/{file_name}"
         self.ds = xr.open_mfdataset(file_path).load()
         self.ds = self.ds.assign_coords(time=np.arange(len(self.ds.time)))
-        #self.grid = pyinterp.Grid3D(pyinterp.Axis(self.ds.time), pyinterp.Axis(self.ds.lat), pyinterp.Axis(self.ds.lon, is_circle=True), self.ds[variable].data)
         self.interpolator = RegularGridInterpolator((self.ds.time, self.ds.lat, self.ds.lon), self.ds[variable].data, bounds_error=False, fill_value=None)
         self.variable = variable
         self.ntime = len(self.ds.time)
@@ -88,7 +85,6 @@ class WeatherBenchDataset_sampling(Dataset):
             latind = 90 - 180/math.pi*torch.acos(1 - 2 * rnds[:, 1])
             lonind = (rnds[:, 2] * 360)
             coord = torch.stack((time, pind, latind, lonind), dim=-1).to(torch.float32)
-            #var_sampled = pyinterp.trivariate(self.grid, time.ravel(), latind.ravel(), lonind.ravel()).reshape(latind.shape)
             coord_in = torch.stack((time, latind, lonind), dim=-1)
             var_sampled = self.interpolator(coord_in).reshape(latind.shape)
             var_sampled = torch.as_tensor(var_sampled).unsqueeze(-1).to(torch.float32)
@@ -111,7 +107,7 @@ class WeatherBenchDataset_sampling(Dataset):
 class ERA5Dataset_sampling(Dataset):
     def __init__(self, file_name, data_path, nbatch, nsample, variable="z", stat_config=None):
         file_path = f"{data_path}/{file_name}"
-        self.ds = xr.open_dataset(file_path)[variable].load()#{"time": 20}
+        self.ds = xr.open_dataset(file_path)[variable].load()
         self.ds = self.ds.assign_coords(time=self.ds.time.dt.dayofyear-1)
         self.interpolator = pyinterp.backends.xarray.Grid4D(self.ds)
         self.variable = variable
@@ -123,7 +119,6 @@ class ERA5Dataset_sampling(Dataset):
             self.stat = ERA5stat(**stat_config)
         else:
             self.stat = None
-        #assert len(sample_block_size) == 3 # np, nlat, nlon
 
     def __len__(self):
         return self.nbatch
@@ -132,9 +127,7 @@ class ERA5Dataset_sampling(Dataset):
         if isinstance(idx, int):
             rnds = self.rndeng.draw(self.nsample)
             time = rnds[:, 0] * (self.ntime - 1)
-            #pind = (torch.rand((self.nsample,)) * (1000-10) + 10)
             pind = torch.as_tensor(self.ds.level.to_numpy(), dtype=torch.float32)[torch.randperm(self.nsample) % len(self.ds.level)]
-            #latind = (torch.rand((self.nsample,)) * 180 - 90)
             # http://corysimon.github.io/articles/uniformdistn-on-sphere/
             latind = 90 - 180/math.pi*torch.acos(1 - 2 * rnds[:, 1])
             lonind = (rnds[:, 2] * 360)
@@ -322,12 +315,12 @@ class FitNet(nn.Module):
         return x
     
 class FitNetModule(pl.LightningModule):
-    # sigma=1.5, omega=30., nfeature=256, width=512, depth=4, tscale=60.0, zscale=100., learning_rate=1e-3, batch_size=3
+    
     def __init__(self, args):
         super(FitNetModule, self).__init__()
         self.save_hyperparameters()
         self.args = args
-        self.model = FitNet(args)#torch.jit.script(FitNet(args))
+        self.model = FitNet(args)
         self.input_type = torch.float32
         
     def train_dataloader(self):
@@ -339,7 +332,6 @@ class FitNetModule(pl.LightningModule):
         return dataloader
     
     def val_dataloader(self):
-        # TODO: use xarray unstack?
         it = 278
         ip = 6
         if self.args.dataloader_mode == "sampling_nc":
@@ -379,7 +371,6 @@ class FitNetModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         if self.args.use_stat:
             coord, var, mean, std = batch
-            #print(coord.mean(), var.mean(), mean.mean(), std.mean())
             var_pred = self(coord) * 0.5 * 1.4 * std + mean
         else:
             coord, var = batch
@@ -494,11 +485,10 @@ def test_on_wholedataset(file_name, data_path, output_path, output_file, logger,
 def generate_outputs(model, output_path, output_file, device="cuda"):
     file_name = model.args.file_name
     data_path = model.args.data_path
-    variable = model.args.variable #"z"
+    variable = model.args.variable # "z"
     ds = xr.open_mfdataset(f"{data_path}/{file_name}").load()
     out_ds = xr.zeros_like(ds)
-    #mean = float(ds[variable].mean())
-    #std = float(ds[variable].max() - ds[variable].min())
+
     mean = ds[variable].mean(dim=["time"]).to_numpy()
     std = (ds[variable].max(dim=["time"]) - ds[variable].min(dim=["time"])).to_numpy()
     assert len(ds[variable].shape) == 3
