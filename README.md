@@ -14,7 +14,7 @@ For our experiments, we used a certain subset as defined here:
 python download.py --variable=geopotential --mode=single --level_type=pressure --years=2016 --resolution=0.5 --time=00:00 --pressure_level 10 50 100 200 300 400 500 700 850 925 1000 --custom_fn=dataset1.nc --output_dir=datasets
 ```
 ## Experiments  🚀
-You can start training or test runs with the script `train.py`. See the next section for more information on the configurable parameters
+If you followed these [setup steps](https://github.com/elenagensch/PADL23_weather_compression), follow the instructions in the [repository](https://github.com/elenagensch/PADL23_weather_compression) for running experiments. You can start training or test runs with the script `train.py`. See the next section for more information on the configurable parameters.
 ### Experiment example:
 ```shell
 ./scripts/quick-submit.sh -- python train.py --nepoches=20 --all --quantizing --testing --variable=z --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --width=512
