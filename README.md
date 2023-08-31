@@ -53,9 +53,6 @@ Number of fourier feature and sigma, the features are sampled from
 ```shell
 python train.py --all --quantizing --testing --variable=z --model_precision=16 --nfeature=128 --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --wandb_sweep_config_name=sweep_config_fp16 --sigma=2
 ```
-```
-
-
 ### Configuration Parameters  🛠
 This section describes the various configuration parameters that can be used when running the script. These parameters can be specified via command-line arguments.
 
