@@ -1,4 +1,4 @@
-# Weather Data Compression with Neural Networks
+# Weather Data Compression with Neural Networks 
 Welcome! This repository contains the code implementation of a neural network-based method for compressing weather data. The approach demonstrates the effectiveness of quantization techniques to achieve efficient data representation.
 
 ## Usage 🛞
@@ -14,31 +14,49 @@ For our experiments, we used a certain subset as defined here:
 python download.py --variable=geopotential --mode=single --level_type=pressure --years=2016 --resolution=0.5 --time=00:00 --pressure_level 10 50 100 200 300 400 500 700 850 925 1000 --custom_fn=dataset1.nc --output_dir=datasets
 ```
 ## Experiments  🚀
-You can start training or test runs with the script `train.py`. See the next section for more information on configurable parameters
-### Run experiments in Section 3.1
-```bash
-for W in 32 64 128 256 512
-do
-    python train.py --nepoches=20 --all  --quantizing --testing --variable=z  --dataloader_mode=sampling_nc --file_name=dataset1.nc --width=$W --output_file=dataset1_w${W}.nc
-    python train.py --nepoches=20 --all  --quantizing --testing --variable=z  --dataloader_mode=sampling_nc --file_name=dataset2.nc --width=$W --output_file=dataset2_w${W}.nc
-    python train.py --nepoches=20 --all  --quantizing --generate_full_outputs --variable=z --use_stat --tscale=360 --dataloader_mode=weatherbench  --file_name=dataset3_z_*.nc --width=$W --output_file=dataset3_z_w${W}.nc
-    python train.py --nepoches=20 --all  --quantizing --generate_full_outputs --variable=z --use_stat --tscale=360 --dataloader_mode=weatherbench  --file_name=dataset4_z_*.nc --width=$W --output_file=dataset4_z_w${W}.nc
-done
+You can start training or test runs with the script `train.py`. See the next section for more information on the configurable parameters
+### Experiment example:
+```shell
+./scripts/quick-submit.sh -- python train.py --nepoches=20 --all --quantizing --testing --variable=z --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --width=512
+```
+### Mixed Precision:
+32-bit baseline
+```shell
+NUM_GPU=3 SERIES=mixed-precision NAME=baseline ./scripts/quick-submit.sh -- WANDB_CACHE_DIR=./wandb_cache WANDB_CONFIG_DIR=./wandb_config WANDB_API_KEY=<YOUR API KEY>  python train.py --testing --file_name=datasets/dataset.nc  --width=512 --model_precision=16 --all --quantizing --use_wandb
 ```
 
-### Run experiments in Section 3.2 
-```bash
-python train.py --nepoches=20 --all  --quantizing --generate_full_outputs --variable=z --use_stat --tscale=360 --dataloader_mode=weatherbench  --file_name=dataset4_z_*.nc --width=512 --output_file=dataset4_z_w512.nc
-python train.py --nepoches=20 --all  --quantizing --generate_full_outputs --variable=t --use_stat --tscale=360 --dataloader_mode=weatherbench  --file_name=dataset4_t_*.nc --width=512 --output_file=dataset4_t_w512.nc
-cdo selyear,1979/2015 dataset4_z_w512.nc train_data_path/geopotential_500/geopotential_500_1979_2015.nc
-cdo selyear,2016/2018 dataset4_z.nc train_data_path/geopotential_500/geopotential_500_2016_2018.nc
-cdo selyear,1979/2015 dataset4_t_w512.nc train_data_path/temperature_850/temperature_850_1979_2015.nc
-cdo selyear,2016/2018 dataset4_t.nc train_data_path/temperature_850/temperature_850_2016_2018.nc
-cd WeatherBench
-python -m src.train_nn -c config.yml --datadir=train_data_path
+16-bit mixed precision
+```shell
+NUM_GPU=3 SERIES=mixed-precision NAME=width768 ./scripts/quick-submit.sh -- WANDB_CACHE_DIR=./wandb_cache WANDB_CONFIG_DIR=./wandb_config WANDB_API_KEY=<YOUR API KEY> python train.py --testing --file_name=datasets/dataset.nc  --width=768 --model_precision=16 --all --quantizing --use_wandb
+```
+### Quantization with BiTorch
+
+32-bit baseline 
+```shell
+python train.py --variable=z --dataloader_mode=sampling_nc --testing --file_name=datasets/dataset.nc --use_wandb --all --width=256 --quantizing
+```
+8-bit quantization
+```shell
+python train.py --variable=z --dataloader_mode=sampling_nc --testing --file_name=datasets/dataset.nc --use_wandb --all  --optimizer=radam --use_quantized_linear_layer --q_bits=8 --width=512
+```
+4-bit quantization with 8bit pre-trained model
+```shell
+python train.py --variable=z --dataloader_mode=sampling_nc --testing --file_name=datasets/dataset.nc --use_wandb --all --use_quantized_linear_layer --q_bits=4 --width=768 --learning_rate=0.0003 --ckpt_path=8bit.ckpt --nepoches=30
+```
+### Fourier feature tuning
+Trainable Fourier Features
+```shell
+python train.py --all --quantizing --testing --variable=z --model_precision=16  --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --trainable_fourierfeature=True
+```
+Number of fourier feature and sigma, the features are sampled from
+
+```shell
+python train.py --all --quantizing --testing --variable=z --model_precision=16 --nfeature=128 --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --wandb_sweep_config_name=sweep_config_fp16 --sigma=2
+```
 ```
 
-# Configuration Parameters  🛠
+
+### Configuration Parameters  🛠
 This section describes the various configuration parameters that can be used when running the script. These parameters can be specified via command-line arguments.
 
 - `--num_gpu`: Number of GPUs to use for training. Default: -1 (all available GPUs)
@@ -57,7 +75,7 @@ This section describes the various configuration parameters that can be used whe
 - `--dataloader_mode`: Mode for data loading from the dataloader depending on the dataset. Default: "sampling_nc" (for ERA5)
 - `--data_path`: Path to the data directory. Default: "."
 - `--file_name`: Name of the input file. (No default specified)
-- `--ckpt_path`: Path to the model checkpoint directory. Default: ""
+- `--ckpt_path`: Path to the model checkpoint directorys. Default: ""
 - `--nfeature`: Number of fourier features. Default: 128
 - `--use_fourierfeature`: Use Fourier features. (Flag, no value required)
 - `--trainable_fourierfeature`: Train Fourier Features.  (Flag, no value required)
