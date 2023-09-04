@@ -1,7 +1,7 @@
 # Weather Data Compression with Neural Networks 
-Welcome! This repository contains the code implementation of a neural network-based method for compressing weather data. The approach demonstrates the effectiveness of quantization techniques to achieve efficient data representation.
+Welcome! This repository contains the code implementation of a neural network-based method for compressing weather data and is a fork of [this repo](https://github.com/spcl/NNCompression). The approach demonstrates the effectiveness of quantization techniques to achieve efficient data representation.
 
-## Usage 🛞
+## Usage ⚙️
 To use the code, follow these [setup steps](https://github.com/elenagensch/PADL23_weather_compression).
 
 ## Datasets 🗂️
@@ -13,42 +13,46 @@ For our experiments, we used a certain subset as defined here:
 ```bash
 python download.py --variable=geopotential --mode=single --level_type=pressure --years=2016 --resolution=0.5 --time=00:00 --pressure_level 10 50 100 200 300 400 500 700 850 925 1000 --custom_fn=dataset1.nc --output_dir=datasets
 ```
+Remember that an API key available [here](https://cds.climate.copernicus.eu/api-how-to) is required.
+
 ## Experiments  🚀
 If you followed these [setup steps](https://github.com/elenagensch/PADL23_weather_compression), follow the instructions in the [repository](https://github.com/elenagensch/PADL23_weather_compression) for running experiments. You can start training or test runs with the script `train.py`. See the next section for more information on the configurable parameters.
 ### Experiment example:
 ```shell
-./scripts/quick-submit.sh -- python train.py --nepoches=20 --all --quantizing --testing --variable=z --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --width=512
+./scripts/quick-submit.sh -- python train.py --all --quantizing --testing --variable=z --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --width=512
 ```
 ### Mixed Precision:
-32-bit baseline
+Note: In the following, Weights & Biases is used as the logging engine. You can also use the code without it by removing all wandb related options.
+
+#### 32-bit baseline
 ```shell
 NUM_GPU=3 SERIES=mixed-precision NAME=baseline ./scripts/quick-submit.sh -- WANDB_CACHE_DIR=./wandb_cache WANDB_CONFIG_DIR=./wandb_config WANDB_API_KEY=<YOUR API KEY>  python train.py --testing --file_name=datasets/dataset.nc  --width=512 --model_precision=16 --all --quantizing --use_wandb
 ```
 
-16-bit mixed precision
+#### 16-bit mixed precision
 ```shell
 NUM_GPU=3 SERIES=mixed-precision NAME=width768 ./scripts/quick-submit.sh -- WANDB_CACHE_DIR=./wandb_cache WANDB_CONFIG_DIR=./wandb_config WANDB_API_KEY=<YOUR API KEY> python train.py --testing --file_name=datasets/dataset.nc  --width=768 --model_precision=16 --all --quantizing --use_wandb
 ```
 ### Quantization with BiTorch
 
-32-bit baseline 
+#### 32-bit baseline 
 ```shell
 python train.py --variable=z --dataloader_mode=sampling_nc --testing --file_name=datasets/dataset.nc --use_wandb --all --width=256 --quantizing
 ```
-8-bit quantization
+#### 8-bit quantization
 ```shell
 python train.py --variable=z --dataloader_mode=sampling_nc --testing --file_name=datasets/dataset.nc --use_wandb --all  --optimizer=radam --use_quantized_linear_layer --q_bits=8 --width=512
 ```
-4-bit quantization with 8bit pre-trained model
+#### 4-bit quantization with 8bit pre-trained model
 ```shell
 python train.py --variable=z --dataloader_mode=sampling_nc --testing --file_name=datasets/dataset.nc --use_wandb --all --use_quantized_linear_layer --q_bits=4 --width=768 --learning_rate=0.0003 --ckpt_path=8bit.ckpt --nepoches=30
 ```
 ### Fourier feature tuning
-Trainable Fourier Features
+#### Trainable Fourier Features
 ```shell
 python train.py --all --quantizing --testing --variable=z --model_precision=16  --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --trainable_fourierfeature=True
 ```
-Number of fourier feature and sigma, the features are sampled from
+#### Number of fourier feature and sigma, the features are sampled from
 
 ```shell
 python train.py --all --quantizing --testing --variable=z --model_precision=16 --nfeature=128 --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --wandb_sweep_config_name=sweep_config_fp16 --sigma=2
