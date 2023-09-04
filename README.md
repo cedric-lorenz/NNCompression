@@ -1,22 +1,11 @@
 # Weather Data Compression with Neural Networks 
 Welcome! This repository contains the code implementation of a neural network-based method for compressing weather data and is a fork of [this repo](https://github.com/spcl/NNCompression). The approach demonstrates the effectiveness of quantization techniques to achieve efficient data representation.
 
-## Usage ⚙️
-To use the code, follow these [setup steps](https://github.com/elenagensch/PADL23_weather_compression).
-
-## Datasets 🗂️
-The [ERA5 dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview), developed by the Copernicus Climate Change Service at the European Centre for Medium-Range Weather Forecasts (ECMWF), is an important resource for understanding global climate trends. It provides hourly estimates and spans a broad vertical coverage across 37 pressure levels from 1000 hPa to 1 hPa. Horizontally, the coverage is global with a resolution in the atmosphere of 0.25 × 0.25.
-
-### Download data 
-
-For our experiments, we used a certain subset as defined here:
-```bash
-python download.py --variable=geopotential --mode=single --level_type=pressure --years=2016 --resolution=0.5 --time=00:00 --pressure_level 10 50 100 200 300 400 500 700 850 925 1000 --custom_fn=dataset1.nc --output_dir=datasets
-```
-Remember that an API key available [here](https://cds.climate.copernicus.eu/api-how-to) is required.
+## Usage ⚙️ & Datasets 🗂️
+To use the code and download datasets, follow these [setup steps](https://github.com/elenagensch/PADL23_weather_compression).
 
 ## Experiments  🚀
-If you followed these [setup steps](https://github.com/elenagensch/PADL23_weather_compression), follow the instructions in the [repository](https://github.com/elenagensch/PADL23_weather_compression) for running experiments. You can start training or test runs with the script `train.py`. See the next section for more information on the configurable parameters.
+You can start training or test runs with the script `train.py`. See the next section for more information on the configurable parameters.
 ### Experiment example:
 ```shell
 ./scripts/quick-submit.sh -- python train.py --all --quantizing --testing --variable=z --dataloader_mode=sampling_nc --file_name=datasets/dataset.nc --width=512
